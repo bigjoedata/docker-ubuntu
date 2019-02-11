@@ -1,0 +1,421 @@
+version: "3.6"
+services:
+  traefik:
+    hostname: traefik
+    image: traefik:latest
+    container_name: traefik
+    restart: always
+    domainname: ${DOMAINNAME}
+    networks:
+#      - default
+      - traefik_proxy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    environment:
+      - CLOUDFLARE_EMAIL=${CLOUDFLARE_EMAIL}
+      - CLOUDFLARE_API_KEY=${CLOUDFLARE_API_KEY}
+    labels:
+      - "traefik.enable=false"
+      - "traefik.backend=traefik"
+      - "traefik.frontend.rule=Host:traefik.${DOMAINNAME}"  
+      - "traefik.port=8080"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.CustomFrameOptionsValue=SAMEORIGIN"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${USERDIR}/docker/traefik:/etc/traefik
+      - ${USERDIR}/docker/shared:/shared
+  portainer:
+    image: portainer/portainer:latest
+    container_name: portainer
+    restart: always
+    command: -H unix:///var/run/docker.sock
+    privileged: true
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${USERDIR}/docker/portainer/data:/data
+      - ${USERDIR}/docker/shared:/shared
+    environment:
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+    networks:
+      - default
+    labels:
+      - "traefik.enable=false"
+  phpmyadmin:
+    hostname: phpmyadmin
+    container_name: phpmyadmin
+    image: phpmyadmin/phpmyadmin
+    restart: always
+    links:
+      - mariadb:db
+    ports:
+      - 9002:80
+    environment:
+      - PMA_HOST=mariadb
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    networks:
+      - default
+    labels:
+      - "traefik.enable=false"
+  mariadb:
+    image: linuxserver/mariadb:latest
+#    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    container_name: "mariadb"
+    hostname: mariadb
+    volumes:
+      - ${USERDIR}/docker/mariadb:/config
+      - ${USERDIR}/public:/public
+    ports:
+      - target: 3306
+        published: 3306
+        protocol: tcp
+        mode: host
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+  eapcontroller:
+    image: mace/eap-controller:latest
+    container_name: eapcontroller
+    restart: always
+    privileged: true
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/docker/eapcontroller:/config
+    environment:
+      - TZ=${TZ}
+    network_mode: host
+    labels:
+      - "traefik.enable=false"
+  motioneye:
+    container_name: motioneye
+    restart: always
+    image: ccrisan/motioneye:master-amd64
+    ports:
+      - "9055:8765"
+      - "9056:8081"
+    hostname: "motioneye"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${USERDIR}/docker/motioneye/root:/etc/zoneminder
+      - ${USERDIR}/docker/motioneye/var/lib:/var/lib/motioneye
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - default
+    labels:
+      - "traefik.enable=false"
+      - "traefik.backend=motioneye"
+      - "traefik.frontend.rule=Host:motioneye.${DOMAINNAME}"
+      - "traefik.port=8765"
+      - "traefik.protocol=https"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+#      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+#      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.CustomFrameOptionsValue=SAMEORIGIN"
+  freshrss:
+    image: freshrss/freshrss:latest
+    container_name: "freshrss"
+    restart: always
+    depends_on:
+      - mariadb
+    networks:
+      - traefik_proxy
+      - default
+#    ports:
+#      - 10001:80
+    volumes:
+      - ${USERDIR}/docker/freshrss/freshrssdata:/var/www/FreshRSS/data
+      - ${USERDIR}/docker/freshrss/config:/config
+    links:
+      - mariadb:db
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=freshrss"
+      - "traefik.frontend.rule=Host:freshrss.${DOMAINNAME}"
+      - "traefik.port=80"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+#      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+    environment:
+      - CRON_MIN=13/43
+      - PUID=${PUID}
+      - PGID=${PGID}
+#      - MYSQL_HOST=db
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=freshrss
+      - MYSQL_USER=freshrss
+      - MYSQL_PASSWORD=${FRESHRSS_MYSQL}
+  librenms:
+    hostname: librenms
+    container_name: librenms
+    image: jarischaefer/docker-librenms
+    restart: always
+    links:
+      - mariadb:db
+    ports:
+      - 9003:80
+      - 9004:514
+      - 9004:514/udp
+    networks:
+#      - traefik_proxy
+      - default
+    environment:
+      - TZ=${TZ}
+      - APP_KEY={librenmsappkey}
+      - DB_HOST=db
+      - DB_NAME=librenms
+      - DB_USER=librenms
+      - DB_PASS={librenmsdbpass}
+      - BASE_URL=/ 
+#     - BASE_URL=https://librenms.${DOMAINNAME}
+      - CHECK_SERVICES_ENABLE=true
+      - DISCOVERY_ENABLE=true
+      - DISCOVERY_THREADS=1
+      - POLLERS_ENABLE=true
+      - POLLERS=2
+      - SNMP_SCAN_ENABLE=true
+      - SNMP_SCAN_CRON=0 0 * * *
+      - DAILY_ENABLE=true
+      - WEATHERMAP_ENABLE=true
+      - WEATHERMAP_CRON=*/5 * * * *
+      - ENABLE_SYSLOG=true
+    volumes:
+      - ${USERDIR}/docker/librenms/logs:/opt/librenms/logs
+      - ${USERDIR}/docker/librenms/rrd:/opt/librenms/rrd
+      - ${USERDIR}/docker/librenms/nginxlog:/var/log/nginx
+      - ${USERDIR}/docker/librenms/nginxssl:/etc/nginx/ssl
+    labels:
+      - "traefik.enable=false"
+      - "traefik.backend=librenms"
+      - "traefik.frontend.rule=Host:librenms.${DOMAINNAME}"
+  nextcloud:
+    container_name: nextcloud
+    restart: always
+    image: linuxserver/nextcloud:latest
+    volumes:
+      - ${USERDIR}/docker/nextcloud/config:/config
+      - ${USERDIR}/docker/nextcloud/nextcloud/html:/var/www/html
+      - ${USERDIR}/shared_data:/data
+      - ${USERDIR}/docker/shared:/shared
+      - /nfs/emedia:/emedia
+      - ${USERDIR}/public:/public
+      - /r_smb/_newemedia/_completed:/new_completed
+      - /r_smb/installs:/installs
+      - /rw_smb/dropper:/dropper
+    depends_on:
+      - mariadb
+    links:
+      - mariadb
+#    ports:
+#      - "10002:443"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_HOST=mariadb
+      - MYSQL_USER=nextcloud
+      - MYSQL_PASSWORD=#5KmQB7q3%9FHht1hp6p02
+      - MYSQL_DATABASE=mariadb
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=nexusandnexus"
+      - "traefik.frontend.rule=Host:nexusandnexus.${DOMAINNAME}"
+      - "traefik.port=443"
+      - "traefik.protocol=https"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+#      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+#      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.CustomFrameOptionsValue=SAMEORIGIN"
+#  jupyter:
+#    container_name: jupyter
+#    restart: always
+#    image: jupyter/datascience-notebook:latest
+#    volumes:
+#      - ${USERDIR}/docker/shared:/shared
+#      - ${USERDIR}/docker/jupyter:/home/jovyan:rw
+#      - ${USERDIR}/public:/public
+#      - ${USERDIR}/docker/jupyter-certs:/etc/ssl/notebook
+#    ports:
+#      - "8888:8888"
+#    user: root
+#    environment:
+#      - PUID=${PUID}
+#      - PGID=${PGID}
+#      - USE_HTTPS=no
+#      - GEN_CERT=no
+#      - GRANT_SUDO=1
+#      - NB_UID=1000
+#      - BASEURL="/tree"
+#    networks:
+#      - traefik_proxy
+#      - default
+#    labels:
+#      - "traefik.enable=false"
+#      - "traefik.backend=jupyter"
+#      - "traefik.frontend.rule=Host:jupyter.${DOMAINNAME}"
+#      - "traefik.frontend.rule=Path:/login"
+#      - "traefik.port=8888"
+#      - "traefik.protocol=https"
+#      - "traefik.docker.network=traefik_proxy"
+#      - "traefik.frontend.headers.SSLRedirect=true"
+#      - "traefik.frontend.headers.STSSeconds=315360000"
+#      - "traefik.frontend.headers.browserXSSFilter=true"
+#      - "traefik.frontend.headers.contentTypeNosniff=true"
+#      - "traefik.frontend.headers.forceSTSHeader=true"
+#      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+#      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+#      - "traefik.frontend.headers.STSPreload=true"
+#      - "traefik.frontend.headers.frameDeny=true"
+#      - "traefik.frontend.headers.CustomFrameOptionsValue=SAMEORIGIN"
+#      - "traefik.frontend.headers.passHostHeader=true"
+#    command: "start-notebook.sh --NotebookApp.password={jupyterpassword}"
+  RDP-Calibre:
+    image: aptalca/docker-rdp-calibre
+    container_name: RDP-Calibre
+    restart: always
+    ports:
+      - "9010:8080"
+      - "9011:8081"
+    volumes:
+      - /media/2tb/calibre/config:/config:rw
+      - /media/2tb/calibrelibrary:/library:rw
+    environment:
+      - TZ=${TZ}
+#      - PUID=${PUID}
+#      - PGID=${PGID}
+      - EDGE=1
+      - WIDTH=1280
+      - HEIGHT=720
+    networks:
+      - default
+    labels:
+      - "traefik.enable=false"
+  calibreweb:
+    image: linuxserver/calibre-web:latest
+    container_name: calibreweb
+    restart: always
+    ports:
+      - "9012:8083"
+    volumes:
+      - ${USERDIR}/docker/calibreweb/config:/config
+      - /media/2tb/calibrelibrary:/books
+      - ${USERDIR}/certs:/certs:ro
+    environment:
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+    networks:
+#      - default
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=calibreweb"
+      - "traefik.frontend.rule=Host:calibreweb.${DOMAINNAME}"
+      - "traefik.port=8083"
+#      - "traefik.protocol=https"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+#      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+#      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.CustomFrameOptionsValue=SAMEORIGIN"
+      - "traefik.frontend.headers.customRequestHeaders=X-Script-Name:/calibre"
+  airsonic:
+    image: linuxserver/airsonic:latest
+    container_name: airsonic
+    restart: always
+    ports:
+      - "9020:4040"
+    volumes:
+      - ${USERDIR}/docker/airsonic/config:/config
+      - /rw_smb/emedia/Music:/music
+      - /rw_smb/emedia/Podcasts:/podcasts
+      - /rw_smb/emedia/Other_Media:/media
+      - /rw_smb/emedia/Music_Playlists:/playlists
+#      - ${USERDIR}/certs:/certs:ro
+    environment:
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - CONTEXT_PATH=/
+    networks:
+      - default
+#      - traefik_proxy
+    labels:
+      - "traefik.enable=false"
+      - "traefik.backend="
+      - "traefik.frontend.rule=Host:superbeats.${DOMAINNAME}"
+      - "traefik.port=8083"
+#      - "traefik.protocol=https"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+#      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+#      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.CustomFrameOptionsValue=SAMEORIGIN"
+#      - "traefik.frontend.headers.customRequestHeaders=X-Script-Name:/airsonic"
+  watchtower:
+    container_name: watchtower
+    restart: always
+    image: v2tec/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --schedule "0 0 4 * * *" --cleanup
+networks:
+  traefik_proxy:
+    external:
+      name: traefik_proxy
+  default:
+    driver: bridge
