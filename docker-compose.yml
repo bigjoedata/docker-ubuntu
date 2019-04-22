@@ -266,6 +266,42 @@ services:
       - "traefik.frontend.headers.STSPreload=true"
 #      - "traefik.frontend.headers.frameDeny=true"
       - "traefik.frontend.headers.CustomFrameOptionsValue=SAMEORIGIN"
+  postgres:
+    container_name: postgres
+    image: postgres:9.6
+#    volumes:
+#      - ${USERDIR}/docker/airflowpostgres:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+  airflow:
+    container_name: airflow
+    image: puckel/docker-airflow:1.10.2
+    restart: always
+    links:
+      - postgres
+    depends_on:
+      - postgres
+    networks:
+ #     - traefik_proxy
+      - default
+    ports:
+      - "10880:8080"
+    environment:
+      - LOAD_EX=n
+      - EXECUTOR=Local
+    volumes:
+      - ${USERDIR}/docker/airflow/dags:/usr/local/airflow/dags
+            # Uncomment to include custom plugins
+            # - ./plugins:/usr/local/airflow/plugins
+    command: webserver
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /usr/local/airflow/airflow-webserver.pid ]"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
 #  jupyter:
 #    container_name: jupyter
 #    restart: always
